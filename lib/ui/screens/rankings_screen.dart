@@ -135,7 +135,7 @@ class _RankingsScreenState extends State<RankingsScreen> with SingleTickerProvid
                           : ListView.separated(
                               padding: const EdgeInsets.only(bottom: 16),
                               itemCount: _sortedRankings.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              separatorBuilder: (_, _) => const SizedBox(height: 8),
                               itemBuilder: (context, i) => _RankingRow(
                                 pos: i + 1,
                                 entry: _sortedRankings[i],

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/tennis_models.dart';
 import '../../repository/tennis_repository.dart';
-import '../widgets/shared_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
   final TennisRepository repo;
@@ -14,10 +13,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   String? _filterDate;
-  int? _filterSeasonId;
-  int _filterType = 0; // 0=date, 1=season
+  final int _filterType = 0; // 0=date, 1=season
   List<Match> _matchesList = [];
-  bool _isFilterLoading = false;
 
   @override
   void initState() {
@@ -35,25 +32,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_filterType == 0 && (_filterDate == null || _filterDate == widget.repo.initData?.defaultDate)) {
       setState(() => _matchesList = widget.repo.initData?.defaultDateMatches ?? []);
     }
-  }
-
-  Future<void> _loadMatches() async {
-    setState(() => _isFilterLoading = true);
-    if (_filterType == 0) {
-      final date = _filterDate;
-      if (date != null && date != widget.repo.initData?.defaultDate) {
-        final m = await widget.repo.fetchMatchesByDate(date);
-        if (m != null && mounted) setState(() => _matchesList = m);
-      }
-    } else {
-      final sid = _filterSeasonId ?? widget.repo.initData?.activeSeason?.id ?? widget.repo.initData?.seasons?.firstOrNull?.id;
-      if (sid != null) {
-        _filterSeasonId ??= sid;
-        final m = await widget.repo.fetchMatchesBySeason(sid);
-        if (m != null && mounted) setState(() => _matchesList = m);
-      }
-    }
-    if (mounted) setState(() => _isFilterLoading = false);
   }
 
   @override
@@ -90,7 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _featuredMatch(cs),
                       const SizedBox(height: 16),
                       // Match list
-                      if (widget.repo.isLoading || _isFilterLoading)
+                      if (widget.repo.isLoading)
                         SizedBox(height: 100, child: Center(child: CircularProgressIndicator(color: cs.primary)))
                       else if (_matchesList.isEmpty)
                         const SizedBox(height: 100, child: Center(child: Text('Chưa có trận đấu nào.')))
@@ -322,7 +300,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (error != null) Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12, fontWeight: FontWeight.bold)),
               // Season
               DropdownButtonFormField<int>(
-                value: selSeason,
+                initialValue: selSeason,
                 decoration: const InputDecoration(labelText: 'Chọn mùa giải'),
                 items: seasons.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
                 onChanged: (v) => ss(() => selSeason = v!),
@@ -339,26 +317,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // Team 1
               Card(color: Theme.of(context).colorScheme.secondaryContainer, child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('VĐV ĐỘI 1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.primary)),
-                DropdownButtonFormField<int>(value: p1, decoration: const InputDecoration(labelText: 'VĐV 1'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p1 = v!)),
-                if (matchType == 'duo') DropdownButtonFormField<int>(value: p2, decoration: const InputDecoration(labelText: 'VĐV 2'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p2 = v)),
+                DropdownButtonFormField<int>(initialValue: p1, decoration: const InputDecoration(labelText: 'VĐV 1'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p1 = v!)),
+                if (matchType == 'duo') DropdownButtonFormField<int>(initialValue: p2, decoration: const InputDecoration(labelText: 'VĐV 2'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p2 = v)),
                 TextFormField(controller: t1Ctrl, decoration: const InputDecoration(labelText: 'Điểm trận Đội 1'), keyboardType: TextInputType.number),
               ]))),
               const SizedBox(height: 8),
               // Team 2
               Card(child: Padding(padding: const EdgeInsets.all(10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('VĐV ĐỘI 2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                DropdownButtonFormField<int>(value: p3, decoration: const InputDecoration(labelText: 'VĐV 3'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p3 = v!)),
-                if (matchType == 'duo') DropdownButtonFormField<int>(value: p4, decoration: const InputDecoration(labelText: 'VĐV 4'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p4 = v)),
+                DropdownButtonFormField<int>(initialValue: p3, decoration: const InputDecoration(labelText: 'VĐV 3'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p3 = v!)),
+                if (matchType == 'duo') DropdownButtonFormField<int>(initialValue: p4, decoration: const InputDecoration(labelText: 'VĐV 4'), items: players.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(), onChanged: (v) => ss(() => p4 = v)),
                 TextFormField(controller: t2Ctrl, decoration: const InputDecoration(labelText: 'Điểm trận Đội 2'), keyboardType: TextInputType.number),
               ]))),
               const SizedBox(height: 8),
-              Row(children: [
-                const Text('Đội thắng: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                Radio<int>(value: 1, groupValue: winTeam, onChanged: (v) => ss(() => winTeam = v!)),
-                const Text('Đội 1'),
-                Radio<int>(value: 2, groupValue: winTeam, onChanged: (v) => ss(() => winTeam = v!)),
-                const Text('Đội 2'),
-              ]),
+              RadioGroup<int>(
+                groupValue: winTeam,
+                onChanged: (v) => ss(() => winTeam = v!),
+                child: Row(children: [
+                  const Text('Đội thắng: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  Radio<int>(value: 1),
+                  const Text('Đội 1'),
+                  Radio<int>(value: 2),
+                  const Text('Đội 2'),
+                ]),
+              ),
             ]),
           ),
           actions: [

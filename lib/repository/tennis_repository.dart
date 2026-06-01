@@ -14,9 +14,6 @@ import '../utils/notification_helper.dart';
 class TennisRepository extends ChangeNotifier {
   final TennisApiClient _api = TennisApiClient();
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
     iOptions: IOSOptions(
       accessibility: KeychainAccessibility.first_unlock,
     ),
@@ -142,7 +139,7 @@ class TennisRepository extends ChangeNotifier {
   // ─── Init Data ─────────────────────────────────────────────────────────────
 
   Future<InitResponse?> fetchInitData({bool showLoading = true}) async {
-    final result = await _safeApiCall(() => _api.getInitData()!, showLoading: showLoading);
+    final result = await _safeApiCall(() => _api.getInitData(), showLoading: showLoading);
     if (result != null) {
       _initData = result;
       if (result.csrfToken != null) {
@@ -216,7 +213,7 @@ class TennisRepository extends ChangeNotifier {
   // ─── CSRF ──────────────────────────────────────────────────────────────────
 
   Future<String?> fetchCsrfToken() async {
-    final result = await _safeApiCall(() => _api.getCsrfToken()!);
+    final result = await _safeApiCall(() => _api.getCsrfToken());
     if (result != null) {
       await _setCsrfToken(result.csrfToken);
       return result.csrfToken;
@@ -227,14 +224,14 @@ class TennisRepository extends ChangeNotifier {
   // ─── Data Version ──────────────────────────────────────────────────────────
 
   Future<int?> checkDataVersion({bool showLoading = false}) async {
-    final result = await _safeApiCall(() => _api.getDataVersion()!, showLoading: showLoading);
+    final result = await _safeApiCall(() => _api.getDataVersion(), showLoading: showLoading);
     return result?.version;
   }
 
   // ─── Players ───────────────────────────────────────────────────────────────
 
   Future<bool> createPlayer(String name) async {
-    final res = await _safeApiCall(() => _api.createPlayer(CreatePlayerRequest(name: name))!);
+    final res = await _safeApiCall(() => _api.createPlayer(CreatePlayerRequest(name: name)));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -243,7 +240,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> deletePlayer(int id) async {
-    final res = await _safeApiCall(() => _api.deletePlayer(id)!);
+    final res = await _safeApiCall(() => _api.deletePlayer(id));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -258,7 +255,7 @@ class TennisRepository extends ChangeNotifier {
   // ─── Seasons ───────────────────────────────────────────────────────────────
 
   Future<bool> createSeason(CreateSeasonRequest req) async {
-    final res = await _safeApiCall(() => _api.createSeason(req)!);
+    final res = await _safeApiCall(() => _api.createSeason(req));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -267,7 +264,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> updateSeason(int id, CreateSeasonRequest req) async {
-    final res = await _safeApiCall(() => _api.updateSeason(id, req)!);
+    final res = await _safeApiCall(() => _api.updateSeason(id, req));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -276,7 +273,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> deleteSeason(int id) async {
-    final res = await _safeApiCall(() => _api.deleteSeason(id)!);
+    final res = await _safeApiCall(() => _api.deleteSeason(id));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -285,7 +282,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> endSeason(int id, String endDate) async {
-    final res = await _safeApiCall(() => _api.endSeason(id, EndSeasonRequest(endDate: endDate))!);
+    final res = await _safeApiCall(() => _api.endSeason(id, EndSeasonRequest(endDate: endDate)));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -294,7 +291,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> reactivateSeason(int id) async {
-    final res = await _safeApiCall(() => _api.reactivateSeason(id)!);
+    final res = await _safeApiCall(() => _api.reactivateSeason(id));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -304,7 +301,7 @@ class TennisRepository extends ChangeNotifier {
 
   Future<bool> updateSeasonPlayers(int seasonId, List<int> playerIds) async {
     final res = await _safeApiCall(
-        () => _api.replaceSeasonPlayers(seasonId, SeasonPlayersRequest(playerIds: playerIds))!);
+        () => _api.replaceSeasonPlayers(seasonId, SeasonPlayersRequest(playerIds: playerIds)));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -320,7 +317,7 @@ class TennisRepository extends ChangeNotifier {
   // ─── Matches ───────────────────────────────────────────────────────────────
 
   Future<bool> createMatch(CreateMatchRequest req) async {
-    final res = await _safeApiCall(() => _api.createMatch(req)!);
+    final res = await _safeApiCall(() => _api.createMatch(req));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -329,7 +326,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> updateMatch(int id, CreateMatchRequest req) async {
-    final res = await _safeApiCall(() => _api.updateMatch(id, req)!);
+    final res = await _safeApiCall(() => _api.updateMatch(id, req));
     if (res?.success == true) {
       await fetchInitData();
       return true;
@@ -338,7 +335,7 @@ class TennisRepository extends ChangeNotifier {
   }
 
   Future<bool> deleteMatch(int id) async {
-    final res = await _safeApiCall(() => _api.deleteMatch(id)!);
+    final res = await _safeApiCall(() => _api.deleteMatch(id));
     if (res?.success == true) {
       await fetchInitData();
       return true;

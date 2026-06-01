@@ -64,7 +64,7 @@ class _SeasonsScreenState extends State<SeasonsScreen> {
                           : ListView.separated(
                               padding: const EdgeInsets.only(bottom: 80),
                               itemCount: seasons.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 16),
+                              separatorBuilder: (_, _) => const SizedBox(height: 16),
                               itemBuilder: (context, i) => _SeasonCard(
                                 season: seasons[i],
                                 isAdmin: isAdmin,

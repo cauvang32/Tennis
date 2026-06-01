@@ -16,6 +16,7 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4 
+        
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -28,6 +29,7 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # Lệnh flutter pub get đã được đặt ở đây, ngay trước khi build
       - name: Install Dependencies
         run: flutter pub get
 

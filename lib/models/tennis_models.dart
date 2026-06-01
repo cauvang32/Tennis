@@ -1,5 +1,6 @@
 /// Data models matching the Kotlin TennisModels.kt
 /// Using plain Dart classes with fromJson/toJson for simplicity and zero codegen.
+library;
 
 class User {
   final int? id;

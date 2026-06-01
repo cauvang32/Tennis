@@ -121,7 +121,7 @@ class _MainAppShellState extends State<MainAppShell> with WidgetsBindingObserver
   }
 
   Widget _buildTab() {
-    final showLogin = () => setState(() => _isLoginOpen = true);
+    void showLogin() => setState(() => _isLoginOpen = true);
     return switch (_activeTab) {
       0 => DashboardScreen(repo: widget.repo, onShowLogin: showLogin),
       1 => RankingsScreen(repo: widget.repo, onShowLogin: showLogin),
