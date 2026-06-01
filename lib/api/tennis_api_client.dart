@@ -1,8 +1,56 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:brotli/brotli.dart';
 import 'package:flutter/foundation.dart';
 import '../models/tennis_models.dart';
+
+/// Custom dio [Transformer] that decodes `Content-Encoding: br` (brotli)
+/// response bodies before the JSON parser sees them. The backend now serves
+/// every API response brotli-compressed (and was already using brotli before
+/// the streamed-chunked upgrade), but dio has no built-in brotli decoder.
+/// Without this transformer, dio would hand the raw brotli bytes to
+/// `LoginResponse.fromJson(...)`, throw a type error, and the user would
+/// see "Unexpected error occurred." for every call.
+class BrotliTransformer implements Transformer {
+  final Transformer _inner;
+  BrotliTransformer(this._inner);
+
+  @override
+  Future<String> transformRequest(RequestOptions options) =>
+      _inner.transformRequest(options);
+
+  @override
+  Future<dynamic> transformResponse(RequestOptions options, ResponseBody response) async {
+    final encoding = response.headers['content-encoding']?.firstOrNull?.toLowerCase();
+    if (encoding == 'br') {
+      try {
+        final compressed = await response.stream.fold<List<int>>(
+          <int>[],
+          (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+        );
+        final decompressed = Uint8List.fromList(const BrotliDecoder().convert(compressed));
+        final newHeaders = Map<String, List<String>>.from(response.headers);
+        newHeaders['content-encoding'] = ['identity'];
+        newHeaders['content-length'] = [decompressed.length.toString()];
+        final newResponse = ResponseBody(
+          Stream.value(decompressed),
+          response.statusCode,
+          headers: newHeaders,
+          statusMessage: response.statusMessage,
+          isRedirect: response.isRedirect,
+        );
+        return _inner.transformResponse(options, newResponse);
+      } catch (_) {
+        // Brotli decode failed — fall through to the inner transformer with
+        // the original (still-compressed) body so the failure mode is the
+        // same as without this transformer.
+      }
+    }
+    return _inner.transformResponse(options, response);
+  }
+}
 
 /// TennisApiClient — Dio-based HTTP client matching Kotlin TennisApi.kt
 /// Supports cookies (PersistentCookieJar), Bearer tokens, and CSRF headers.
@@ -30,6 +78,7 @@ class TennisApiClient {
       sendTimeout: const Duration(seconds: 20),
       headers: {'Accept': 'application/json'},
     ));
+    _dio.transformer = BrotliTransformer(_dio.transformer);
 
     if (!kIsWeb && _cookieJar != null) {
       _dio.interceptors.add(CookieManager(_cookieJar!));
@@ -246,6 +295,10 @@ class TennisApiClient {
 
   /// Parse error body from DioException
   String parseError(DioException e) {
+    final status = e.response?.statusCode;
+    if (status == 429) {
+      return 'Too many requests. Please wait a moment and try again.';
+    }
     if (e.response?.data is Map) {
       final map = e.response!.data as Map;
       return (map['error'] ?? map['message'] ?? 'Server error: ${e.response?.statusCode}').toString();

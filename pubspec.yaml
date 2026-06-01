@@ -13,6 +13,10 @@ dependencies:
   dio: ^5.8.0
   cookie_jar: ^4.0.8
   dio_cookie_manager: ^3.1.1
+  # Brotli response decoding — server sends Content-Encoding: br on all API
+  # responses and dio has no built-in brotli decoder, so without this every
+  # JSON parse would fail with "Unexpected error".
+  brotli: ^0.6.0
   # State Management
   flutter_riverpod: ^3.3.1
   # Routing

@@ -43,6 +43,13 @@ class TennisRepository extends ChangeNotifier {
   bool? _themeOverride;
   bool? get themeOverride => _themeOverride;
 
+  // Rate-limit backoff: when a 429 is observed, both the SSE handler and the
+  // 15s polling timer skip fetching /api/init until this epoch-millis timestamp
+  // is in the past. The backend now rate-limits /api/init to 30/min per IP.
+  int _rateLimitedUntil = 0;
+  bool get _isRateLimited =>
+      _rateLimitedUntil > DateTime.now().millisecondsSinceEpoch;
+
   // ─── Initialization ────────────────────────────────────────────────────────
 
   Future<void> initialize() async {
@@ -116,6 +123,9 @@ class TennisRepository extends ChangeNotifier {
           (statusCode == 403 && parsedError.toLowerCase().contains('csrf'))) {
         developer.log('Auth expired or CSRF error, clearing session', name: 'TennisRepository');
         await _clearSession();
+      } else if (statusCode == 429) {
+        _rateLimitedUntil = DateTime.now().millisecondsSinceEpoch + 60000;
+        developer.log('Rate limited, backing off for 60s', name: 'TennisRepository');
       }
       if (showLoading) {
         _errorMessage = parsedError;
@@ -419,6 +429,7 @@ class TennisRepository extends ChangeNotifier {
     // 2. Polling fallback every 15 seconds
     _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
       try {
+        if (_isRateLimited) return;
         final latestVersion = await checkDataVersion(showLoading: false);
         final currentVersion = _initData?.version ?? 0;
         if (latestVersion != null && latestVersion > currentVersion) {
@@ -452,11 +463,12 @@ class TennisRepository extends ChangeNotifier {
         developer.log('SSE stream established', name: 'TennisRepository');
         await for (final chunk in stream) {
           if (!_isSyncRunning) break;
+          if (_isRateLimited) continue;
           final text = utf8.decode(chunk);
           for (final line in text.split('\n')) {
             if (line.trim().startsWith('data:')) {
               final now = DateTime.now().millisecondsSinceEpoch;
-              if (now - _lastSseFetchTime > 2000) {
+              if (now - _lastSseFetchTime > 3000) {
                 _lastSseFetchTime = now;
                 developer.log('SSE event received, triggering sync', name: 'TennisRepository');
                 await fetchInitData(showLoading: false);
