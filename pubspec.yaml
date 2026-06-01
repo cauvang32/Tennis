@@ -1,0 +1,39 @@
+name: tennis_pro
+description: Tennis Pro - Tennis Ranking & Tournament Management App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Networking
+  dio: ^5.8.0
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.1.1
+  # State Management
+  flutter_riverpod: ^2.6.1
+  # Routing
+  go_router: ^15.1.2
+  # Secure Storage
+  flutter_secure_storage: ^10.3.1
+  # JSON serialization
+  json_annotation: ^4.9.0
+  # Local Notifications
+  flutter_local_notifications: ^19.2.1
+  # Utilities
+  intl: ^0.20.2
+  # Icons
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.15
+  json_serializable: ^6.9.5
+
+flutter:
+  uses-material-design: true
