@@ -49,6 +49,16 @@ jobs:
       - name: Build APK (Debug)
         run: flutter build apk --debug
 
+      - name: Prepare Debug APK
+        run: |
+          mkdir -p build/app/outputs/final-apks
+          mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
+
+          # Kiểm tra nếu có file debug đã ký thừa từ công đoạn trước thì dọn dẹp luôn
+          if [ -f "build/app/outputs/flutter-apk/app-debug-signed.apk" ]; then
+            rm build/app/outputs/flutter-apk/app-debug-signed.apk
+          fi
+
       - name: Build APK (Release)
         run: flutter build apk --release
         continue-on-error: true
@@ -64,18 +74,23 @@ jobs:
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
 
+      - name: Prepare Release APK
+        if: github.event_name != 'pull_request'
+        run: |
+          mv build/app/outputs/flutter-apk/app-release-signed.apk build/app/outputs/final-apks/tennis_app.apk
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: tennis_app_debug
+          path: build/app/outputs/final-apks/tennis_app_debug.apk
 
       - name: Upload Signed Release APK
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-signed
-          path: ${{ steps.sign_app.outputs.signedFile }}
+          name: tennis_app
+          path: build/app/outputs/final-apks/tennis_app.apk
           
       - name: Generate Release Tag
         if: github.event_name == 'push'
@@ -94,7 +109,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           name: Release ${{ steps.tag.outputs.tag_name }}
           files: |
-            build/app/outputs/flutter-apk/app-debug.apk
-            ${{ steps.sign_app.outputs.signedFile }}
+            build/app/outputs/final-apks/tennis_app_debug.apk
+            build/app/outputs/final-apks/tennis_app.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
