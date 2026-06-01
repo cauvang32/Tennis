@@ -22,6 +22,9 @@ jobs:
         with:
           java-version: '17' 
           distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
           
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -29,7 +32,14 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # Lệnh flutter pub get đã được đặt ở đây, ngay trước khi build
+      - name: Cache Pub Dependencies
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -45,7 +55,7 @@ jobs:
 
       - name: Sign APK
         if: github.event_name != 'pull_request'
-        uses: ilharp/sign-android-release@v1 # Đưa về v1 (bản stable nhất của repo này)
+        uses: ilharp/sign-android-release@v2
         id: sign_app
         with:
           releaseDir: build/app/outputs/flutter-apk
