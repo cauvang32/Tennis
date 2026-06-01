@@ -43,7 +43,7 @@ class NotificationHelper {
     );
 
     await _notificationsPlugin.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: (details) {
         // App opened from notification
       },
@@ -218,10 +218,10 @@ class NotificationHelper {
     final message = '$player1Desc vs $player2Desc (${match.team1Score} - ${match.team2Score})';
 
     await _notificationsPlugin.show(
-      _matchNotificationIdBase + match.id,
-      "⚽ Kết Quả Trận Đấu Mới!",
-      message,
-      details,
+      id: _matchNotificationIdBase + match.id,
+      title: "⚽ Kết Quả Trận Đấu Mới!",
+      body: message,
+      notificationDetails: details,
       payload: 'match:${match.id}',
     );
   }
@@ -244,10 +244,10 @@ class NotificationHelper {
         : 'Bắt đầu từ: ${season.startDate}';
 
     await _notificationsPlugin.show(
-      _seasonNotificationIdBase + season.id,
-      "📅 Giải Đấu Mới Khởi Tranh!",
-      '${season.name}\n$dateRange',
-      details,
+      id: _seasonNotificationIdBase + season.id,
+      title: "📅 Giải Đấu Mới Khởi Tranh!",
+      body: '${season.name}\n$dateRange',
+      notificationDetails: details,
       payload: 'season:${season.id}',
     );
   }
