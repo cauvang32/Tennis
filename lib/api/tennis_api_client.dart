@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -6,16 +7,15 @@ import 'package:brotli/brotli.dart';
 import 'package:flutter/foundation.dart';
 import '../models/tennis_models.dart';
 
-/// Custom dio [Transformer] that decodes `Content-Encoding: br` (brotli)
-/// response bodies before the JSON parser sees them. The backend now serves
-/// every API response brotli-compressed (and was already using brotli before
-/// the streamed-chunked upgrade), but dio has no built-in brotli decoder.
-/// Without this transformer, dio would hand the raw brotli bytes to
-/// `LoginResponse.fromJson(...)`, throw a type error, and the user would
-/// see "Unexpected error occurred." for every call.
-class BrotliTransformer implements Transformer {
+/// Custom dio [Transformer] that decodes compressed response bodies
+/// (Content-Encoding: br / gzip / deflate) before the JSON parser sees them.
+/// The backend now serves every API response compressed, but dio has no
+/// built-in decoder for any of these. Without this transformer, dio hands
+/// raw compressed bytes to `LoginResponse.fromJson(...)`, throws a type
+/// error, and the user sees "Unexpected error occurred." for every call.
+class CompressionTransformer implements Transformer {
   final Transformer _inner;
-  BrotliTransformer(this._inner);
+  CompressionTransformer(this._inner);
 
   @override
   Future<String> transformRequest(RequestOptions options) =>
@@ -24,31 +24,52 @@ class BrotliTransformer implements Transformer {
   @override
   Future<dynamic> transformResponse(RequestOptions options, ResponseBody response) async {
     final encoding = response.headers['content-encoding']?.firstOrNull?.toLowerCase();
-    if (encoding == 'br') {
-      try {
-        final compressed = await response.stream.fold<List<int>>(
-          <int>[],
-          (List<int> acc, List<int> chunk) => acc..addAll(chunk),
-        );
-        final decompressed = Uint8List.fromList(const BrotliDecoder().convert(compressed));
-        final newHeaders = Map<String, List<String>>.from(response.headers);
-        newHeaders['content-encoding'] = ['identity'];
-        newHeaders['content-length'] = [decompressed.length.toString()];
-        final newResponse = ResponseBody(
-          Stream.value(decompressed),
-          response.statusCode,
-          headers: newHeaders,
-          statusMessage: response.statusMessage,
-          isRedirect: response.isRedirect,
-        );
-        return _inner.transformResponse(options, newResponse);
-      } catch (_) {
-        // Brotli decode failed — fall through to the inner transformer with
-        // the original (still-compressed) body so the failure mode is the
-        // same as without this transformer.
-      }
+    if (encoding == null || encoding == 'identity') {
+      return _inner.transformResponse(options, response);
     }
-    return _inner.transformResponse(options, response);
+    try {
+      final compressed = await response.stream.fold<List<int>>(
+        <int>[],
+        (List<int> acc, List<int> chunk) => acc..addAll(chunk),
+      );
+      // debugPrint (not developer.log) — the latter does not appear in `adb logcat`.
+      debugPrint('[CompressionTransformer] ${response.statusCode} ${options.uri} '
+            'encoding=$encoding compressedBytes=${compressed.length}');
+      final List<int> decompressed;
+      switch (encoding) {
+        case 'br':
+          decompressed = const BrotliDecoder().convert(compressed);
+          break;
+        case 'gzip':
+          decompressed = gzip.decode(compressed);
+          break;
+        case 'deflate':
+          decompressed = zlib.decode(compressed);
+          break;
+        default:
+          debugPrint('[CompressionTransformer] unknown encoding=$encoding, passing through');
+          return _inner.transformResponse(options, response);
+      }
+      debugPrint('[CompressionTransformer] decompressedBytes=${decompressed.length}');
+      final newHeaders = Map<String, List<String>>.from(response.headers);
+      newHeaders['content-encoding'] = ['identity'];
+      newHeaders['content-length'] = [decompressed.length.toString()];
+      final newResponse = ResponseBody(
+        Stream.value(Uint8List.fromList(decompressed)),
+        response.statusCode,
+        headers: newHeaders,
+        statusMessage: response.statusMessage,
+        isRedirect: response.isRedirect,
+      );
+      return _inner.transformResponse(options, newResponse);
+    } catch (e, st) {
+      debugPrint('[CompressionTransformer] decode FAILED for ${options.uri} '
+            'encoding=$encoding: $e');
+      debugPrint(st.toString());
+      // Fall through with the original (still-compressed) body so the failure
+      // mode is at least visible as a JSON parse error in the inner transformer.
+      return _inner.transformResponse(options, response);
+    }
   }
 }
 
@@ -76,9 +97,16 @@ class TennisApiClient {
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 20),
       sendTimeout: const Duration(seconds: 20),
-      headers: {'Accept': 'application/json'},
+      // Exclude `br` so servers that respect Accept-Encoding (nginx + ngx_brotli
+      // does) will send gzip instead. Most servers still send brotli only when
+      // the client advertises support; the transformer below is a safety net
+      // for the ones that force-encode regardless.
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+      },
     ));
-    _dio.transformer = BrotliTransformer(_dio.transformer);
+    _dio.transformer = CompressionTransformer(_dio.transformer);
 
     if (!kIsWeb && _cookieJar != null) {
       _dio.interceptors.add(CookieManager(_cookieJar!));

@@ -121,11 +121,16 @@ class TennisRepository extends ChangeNotifier {
       final statusCode = e.response?.statusCode;
       if (statusCode == 401 ||
           (statusCode == 403 && parsedError.toLowerCase().contains('csrf'))) {
+        debugPrint('[TennisRepository] 401/CSRF — clearing session');
         developer.log('Auth expired or CSRF error, clearing session', name: 'TennisRepository');
         await _clearSession();
       } else if (statusCode == 429) {
         _rateLimitedUntil = DateTime.now().millisecondsSinceEpoch + 60000;
+        debugPrint('[TennisRepository] 429 — backing off for 60s');
         developer.log('Rate limited, backing off for 60s', name: 'TennisRepository');
+      } else {
+        debugPrint('[TennisRepository] DioException status=$statusCode error=$parsedError '
+              'request=${e.requestOptions.uri}');
       }
       if (showLoading) {
         _errorMessage = parsedError;
