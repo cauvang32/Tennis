@@ -331,10 +331,26 @@ class TennisApiClient {
       final map = e.response!.data as Map;
       return (map['error'] ?? map['message'] ?? 'Server error: ${e.response?.statusCode}').toString();
     }
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      return 'Network error. Please check your connection.';
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return 'Network error. Please check your connection.';
+      case DioExceptionType.connectionError:
+        return 'Cannot reach server. Please check your connection.';
+      case DioExceptionType.badCertificate:
+        return 'Server certificate could not be verified.';
+      case DioExceptionType.cancel:
+        return 'Request was cancelled.';
+      case DioExceptionType.badResponse:
+      case DioExceptionType.unknown:
+        // Surface the underlying exception (SocketException, HandshakeException,
+        // CertificateException, …) so the user-visible error explains *why*
+        // the request died — otherwise they only see "Unexpected error".
+        final underlying = e.error?.toString();
+        return underlying != null
+            ? 'Unexpected error: $underlying'
+            : 'Unexpected error occurred.';
     }
-    return 'Unexpected error occurred.';
   }
 }

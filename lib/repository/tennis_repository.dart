@@ -129,8 +129,9 @@ class TennisRepository extends ChangeNotifier {
         debugPrint('[TennisRepository] 429 — backing off for 60s');
         developer.log('Rate limited, backing off for 60s', name: 'TennisRepository');
       } else {
-        debugPrint('[TennisRepository] DioException status=$statusCode error=$parsedError '
-              'request=${e.requestOptions.uri}');
+        debugPrint('[TennisRepository] DioException type=${e.type.name} '
+              'status=$statusCode error=$parsedError request=${e.requestOptions.uri} '
+              'underlying=${e.error}');
       }
       if (showLoading) {
         _errorMessage = parsedError;
