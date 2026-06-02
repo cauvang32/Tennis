@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for HTTP/HTTPS calls to the backend (hungsanity.com).
+         The debug variant also declares this, but the release APK merges
+         only this main manifest, so the permission must live here too. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="tennis_pro"
         android:name="${applicationName}"
