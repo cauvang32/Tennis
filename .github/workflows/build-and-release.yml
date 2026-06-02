@@ -8,63 +8,37 @@ on:
     branches: [ main ]
 
 jobs:
-  build_and_release_android:
-    permissions:
-      contents: write
+  build_android:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4 
-        
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4 
+      - uses: actions/setup-java@v4
         with:
           java-version: '17' 
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-          
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-
-      - name: Cache Pub Dependencies
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: /home/runner/.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-pub-
-
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Create Dummy Env File
-        run: touch .env.example
-
-      - name: Build APK (Debug)
-        run: flutter build apk --debug
-
-      - name: Prepare Debug APK
-        run: |
+      - run: flutter pub get
+      - run: touch .env.example
+      - run: flutter build apk --debug
+      - run: |
           mkdir -p build/app/outputs/final-apks
           mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
-
-          # Kiểm tra nếu có file debug đã ký thừa từ công đoạn trước thì dọn dẹp luôn
           if [ -f "build/app/outputs/flutter-apk/app-debug-signed.apk" ]; then
             rm build/app/outputs/flutter-apk/app-debug-signed.apk
           fi
-
-      - name: Build APK (Release)
-        run: flutter build apk --release
+      - run: flutter build apk --release
         continue-on-error: true
-
-      - name: Sign APK
-        if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request'
         uses: ilharp/sign-android-release@v2
         id: sign_app
         with:
@@ -73,77 +47,61 @@ jobs:
           keyAlias: ${{ secrets.KEY_ALIAS }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
-
-      - name: Prepare Release APK
-        if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request'
         run: |
           mv build/app/outputs/flutter-apk/app-release-signed.apk build/app/outputs/final-apks/tennis_app.apk
-
-      - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: tennis_app_debug
           path: build/app/outputs/final-apks/tennis_app_debug.apk
-
-      - name: Upload Signed Release APK
-        if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: tennis_app
           path: build/app/outputs/final-apks/tennis_app.apk
-          
-      - name: Generate Release Tag
-        if: github.event_name == 'push'
-        id: tag
+
+  build_ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4 
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+      - run: flutter pub get
+      - run: touch .env.example
+      - run: flutter build ios --release --no-codesign
+      - run: |
+          mkdir -p Payload
+          mv build/ios/iphoneos/Runner.app Payload/
+          zip -qr tennis_app_ios.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis_app_ios
+          path: tennis_app_ios.ipa
+
+  create_release:
+    needs: [build_android, build_ios]
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+      - id: tag
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
             echo "tag_name=build-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
-
-      - name: Create Release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           name: Release ${{ steps.tag.outputs.tag_name }}
-          files: |
-            build/app/outputs/final-apks/tennis_app_debug.apk
-            build/app/outputs/final-apks/tennis_app.apk
+          files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build_ios:
-    runs-on: macos-latest
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4 
-        
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Create Dummy Env File
-        run: touch .env.example
-
-      - name: Build iOS (Unsigned)
-        run: flutter build ios --release --no-codesign
-
-      - name: Package to IPA (ZIP format)
-        run: |
-          mkdir -p Payload
-          mv build/ios/iphoneos/Runner.app Payload/
-          zip -qr tennis_app_ios.ipa Payload
-
-      - name: Upload iOS Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tennis_app_ios
-          path: tennis_app_ios.ipa        

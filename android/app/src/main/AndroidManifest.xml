@@ -3,6 +3,10 @@
          The debug variant also declares this, but the release APK merges
          only this main manifest, so the permission must live here too. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required on Android 13+ (API 33) to show notifications in the system
+         tray. Without this, requestNotificationsPermission() returns false
+         and FlutterLocalNotificationsPlugin.show() silently no-ops. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="tennis_pro"
         android:name="${applicationName}"
