@@ -32,7 +32,16 @@ jobs:
       - run: flutter build apk --debug
       - run: |
           mkdir -p build/app/outputs/final-apks
-          mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
+          # With ABI splits enabled, the universal debug APK is named
+          # `app-universal-debug.apk` (it still bundles all 4 ABIs so the
+          # emulator install path is unchanged for local testing).
+          if [ -f "build/app/outputs/flutter-apk/app-universal-debug.apk" ]; then
+            mv build/app/outputs/flutter-apk/app-universal-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
+          else
+            mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
+          fi
+          # Clean up per-ABI debug APKs and any leftover signed file.
+          rm -f build/app/outputs/flutter-apk/app-*-debug.apk
           if [ -f "build/app/outputs/flutter-apk/app-debug-signed.apk" ]; then
             rm build/app/outputs/flutter-apk/app-debug-signed.apk
           fi
@@ -49,7 +58,17 @@ jobs:
           keyPassword: ${{ secrets.KEY_PASSWORD }}
       - if: github.event_name != 'pull_request'
         run: |
-          mv build/app/outputs/flutter-apk/app-release-signed.apk build/app/outputs/final-apks/tennis_app.apk
+          # R8 + ABI splits produce one signed APK per architecture
+          # (arm64-v8a, armeabi-v7a, x86_64) plus a universal one.
+          # Rename each to tennis_app_<arch>.apk and let the create_release
+          # job glob `release-files/*` to pick them all up.
+          cd build/app/outputs/flutter-apk
+          for apk in *-release-signed.apk; do
+            # e.g. app-arm64-v8a-release-signed.apk -> tennis_app_arm64-v8a.apk
+            new_name=$(echo "$apk" | sed 's/^app-/tennis_app_/; s/-release-signed//; s/$/.apk/')
+            mv "$apk" "../../final-apks/$new_name"
+          done
+          ls -la ../../final-apks/
       - uses: actions/upload-artifact@v4
         with:
           name: tennis_app_debug
@@ -72,13 +91,17 @@ jobs:
       - run: touch .env.example
       - run: flutter build ios --release --no-codesign
       - run: |
+          mkdir -p final-ios
           mkdir -p Payload
-          mv build/ios/iphoneos/Runner.app Payload/
-          zip -qr tennis_app_ios.ipa Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qr final-ios/tennis_app_ios.ipa Payload
+          rm -rf Payload
+          cd build/ios/iphoneos
+          zip -qr "$GITHUB_WORKSPACE/final-ios/tennis_app_ios.zip" Runner.app
       - uses: actions/upload-artifact@v4
         with:
           name: tennis_app_ios
-          path: tennis_app_ios.ipa
+          path: final-ios/
 
   create_release:
     needs: [build_android, build_ios]

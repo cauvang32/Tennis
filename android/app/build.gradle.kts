@@ -35,6 +35,28 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 (minify + obfuscate) and resource shrinking cut the release
+            // APK by ~40-60% — without these, the release APK is the same
+            // size as debug minus debug symbols (~30-40MB).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    // Per-ABI APKs. Each architecture gets its own slim APK (no unused
+    // native libs from the other architectures). The universal APK is
+    // kept as a fallback for stores / sideloaders that only accept one
+    // file. Expected per-ABI size: ~8-12MB; universal: ~20-25MB.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
 }
