@@ -460,32 +460,69 @@ class TennisRepository extends ChangeNotifier {
   Future<void> _connectSse() async {
     while (_isSyncRunning) {
       _sseCancelToken = CancelToken();
+      StreamSubscription<List<int>>? subscription;
       try {
         developer.log('Connecting to SSE stream...', name: 'TennisRepository');
         final response = await _api.connectSseStream();
-        final stream = response.data?.stream;
-        if (stream == null) continue;
+        final rawStream = response.data?.stream;
+        if (rawStream == null) continue;
+
+        // dio's IO adapter internally calls `source.listen(...)` on the
+        // underlying HTTP stream (see dio's response_stream_handler.dart) and
+        // exposes the *wrapped* stream as `responseBody.stream`. The wrapped
+        // stream is a single-subscription StreamController, so any second
+        // listener throws "Bad state: Stream has already been listened to."
+        // — typically when the connection drops and the next reconnect
+        // arrives before the old StreamController has been fully torn down.
+        // `.asBroadcastStream()` rebroadcasts the wrapped stream so we can
+        // safely listen to it once per connection attempt, even if dio's
+        // internal subscription is still in the process of closing.
+        final stream = rawStream.asBroadcastStream();
 
         developer.log('SSE stream established', name: 'TennisRepository');
-        await for (final chunk in stream) {
-          if (!_isSyncRunning) break;
-          if (_isRateLimited) continue;
-          final text = utf8.decode(chunk);
-          for (final line in text.split('\n')) {
-            if (line.trim().startsWith('data:')) {
-              final now = DateTime.now().millisecondsSinceEpoch;
-              if (now - _lastSseFetchTime > 3000) {
-                _lastSseFetchTime = now;
-                developer.log('SSE event received, triggering sync', name: 'TennisRepository');
-                await fetchInitData(showLoading: false);
+        final completer = Completer<void>();
+        subscription = stream.listen(
+          (chunk) async {
+            if (!_isSyncRunning || _isRateLimited) return;
+            final text = utf8.decode(chunk, allowMalformed: true);
+            for (final line in text.split('\n')) {
+              if (line.trim().startsWith('data:')) {
+                final now = DateTime.now().millisecondsSinceEpoch;
+                if (now - _lastSseFetchTime > 3000) {
+                  _lastSseFetchTime = now;
+                  developer.log('SSE event received, triggering sync', name: 'TennisRepository');
+                  try {
+                    await fetchInitData(showLoading: false);
+                  } catch (e) {
+                    developer.log('SSE-triggered fetchInitData failed: $e', name: 'TennisRepository');
+                  }
+                }
               }
             }
-          }
-        }
+          },
+          onError: (Object e, StackTrace st) {
+            developer.log('SSE stream error: $e', name: 'TennisRepository');
+            if (!completer.isCompleted) completer.complete();
+          },
+          onDone: () {
+            developer.log('SSE stream done', name: 'TennisRepository');
+            if (!completer.isCompleted) completer.complete();
+          },
+          cancelOnError: true,
+        );
+        // Hold the loop open until the stream closes or errors.
+        await completer.future;
       } catch (e) {
         if (_isSyncRunning) {
           developer.log('SSE disconnect: $e', name: 'TennisRepository');
         }
+      } finally {
+        // Always release the subscription on the way out, otherwise the
+        // broadcast wrapper keeps a reference to the (single-subscription)
+        // wrapped stream and the next reconnect throws "already listened to".
+        try {
+          await subscription?.cancel();
+        } catch (_) {}
       }
       // Retry after 3 seconds
       if (_isSyncRunning) {

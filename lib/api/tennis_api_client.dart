@@ -28,7 +28,14 @@ class CompressionTransformer implements Transformer {
       return _inner.transformResponse(options, response);
     }
     try {
-      final compressed = await response.stream.fold<List<int>>(
+      // dio internally wraps the raw HTTP stream in a single-subscription
+      // StreamController (see response_stream_handler.dart). If the
+      // connection drops mid-response, the StreamController can be closed
+      // before we read it, leaving us with a stream that has already been
+      // listened to. `.asBroadcastStream()` rebroadcasts it so we can read
+      // it safely without colliding with dio's internal subscription.
+      final source = response.stream.asBroadcastStream();
+      final compressed = await source.fold<List<int>>(
         <int>[],
         (List<int> acc, List<int> chunk) => acc..addAll(chunk),
       );
@@ -66,9 +73,23 @@ class CompressionTransformer implements Transformer {
       debugPrint('[CompressionTransformer] decode FAILED for ${options.uri} '
             'encoding=$encoding: $e');
       debugPrint(st.toString());
-      // Fall through with the original (still-compressed) body so the failure
-      // mode is at least visible as a JSON parse error in the inner transformer.
-      return _inner.transformResponse(options, response);
+      // The wrapped stream has already been consumed (or is otherwise
+      // unreadable). Don't re-hand it to the inner transformer — that would
+      // throw "Stream has already been listened to" again. Instead, return
+      // a synthetic error body so the caller gets a clean DioException
+      // with a readable message instead of a low-level stream error.
+      return Future<dynamic>.error(
+        DioException(
+          requestOptions: options,
+          response: Response<dynamic>(
+            requestOptions: options,
+            statusCode: response.statusCode,
+            statusMessage: response.statusMessage,
+          ),
+          type: DioExceptionType.unknown,
+          error: e,
+        ),
+      );
     }
   }
 }
