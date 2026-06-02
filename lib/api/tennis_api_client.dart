@@ -23,39 +23,39 @@ class CompressionTransformer implements Transformer {
 
   @override
   Future<dynamic> transformResponse(RequestOptions options, ResponseBody response) async {
-    final encoding = response.headers['content-encoding']?.firstOrNull?.toLowerCase();
-    if (encoding == null || encoding == 'identity') {
-      return _inner.transformResponse(options, response);
-    }
+    final headerEncoding = response.headers['content-encoding']?.firstOrNull?.toLowerCase();
+
+    // Read the body once. `.asBroadcastStream()` is required because dio's
+    // internal `response_stream_handler.dart` wraps the raw HTTP stream in a
+    // single-subscription StreamController; the wrapper's own subscription is
+    // the first listener. We rebroadcast so we can read it here even when the
+    // wrapper is mid-teardown (e.g. on a dropped connection).
+    late final List<int> compressed;
     try {
-      // dio internally wraps the raw HTTP stream in a single-subscription
-      // StreamController (see response_stream_handler.dart). If the
-      // connection drops mid-response, the StreamController can be closed
-      // before we read it, leaving us with a stream that has already been
-      // listened to. `.asBroadcastStream()` rebroadcasts it so we can read
-      // it safely without colliding with dio's internal subscription.
       final source = response.stream.asBroadcastStream();
-      final compressed = await source.fold<List<int>>(
+      compressed = await source.fold<List<int>>(
         <int>[],
         (List<int> acc, List<int> chunk) => acc..addAll(chunk),
       );
-      // debugPrint (not developer.log) — the latter does not appear in `adb logcat`.
-      debugPrint('[CompressionTransformer] ${response.statusCode} ${options.uri} '
-            'encoding=$encoding compressedBytes=${compressed.length}');
+    } catch (e, st) {
+      debugPrint('[CompressionTransformer] body read FAILED for ${options.uri}: $e');
+      debugPrint(st.toString());
+      return Future<dynamic>.error(_dioExceptionFrom(options, response, e));
+    }
+
+    // debugPrint (not developer.log) — the latter does not appear in `adb logcat`.
+    debugPrint('[CompressionTransformer] ${response.statusCode} ${options.uri} '
+          'header-encoding=$headerEncoding compressedBytes=${compressed.length}');
+
+    if (headerEncoding != null && headerEncoding != 'identity' && compressed.isNotEmpty) {
       final List<int> decompressed;
-      switch (encoding) {
-        case 'br':
-          decompressed = const BrotliDecoder().convert(compressed);
-          break;
-        case 'gzip':
-          decompressed = gzip.decode(compressed);
-          break;
-        case 'deflate':
-          decompressed = zlib.decode(compressed);
-          break;
-        default:
-          debugPrint('[CompressionTransformer] unknown encoding=$encoding, passing through');
-          return _inner.transformResponse(options, response);
+      try {
+        decompressed = _decompress(compressed, headerEncoding);
+      } catch (e, st) {
+        debugPrint('[CompressionTransformer] decode FAILED for ${options.uri} '
+              'header-encoding=$headerEncoding: $e');
+        debugPrint(st.toString());
+        return Future<dynamic>.error(_dioExceptionFrom(options, response, e));
       }
       debugPrint('[CompressionTransformer] decompressedBytes=${decompressed.length}');
       final newHeaders = Map<String, List<String>>.from(response.headers);
@@ -69,28 +69,94 @@ class CompressionTransformer implements Transformer {
         isRedirect: response.isRedirect,
       );
       return _inner.transformResponse(options, newResponse);
-    } catch (e, st) {
-      debugPrint('[CompressionTransformer] decode FAILED for ${options.uri} '
-            'encoding=$encoding: $e');
-      debugPrint(st.toString());
-      // The wrapped stream has already been consumed (or is otherwise
-      // unreadable). Don't re-hand it to the inner transformer — that would
-      // throw "Stream has already been listened to" again. Instead, return
-      // a synthetic error body so the caller gets a clean DioException
-      // with a readable message instead of a low-level stream error.
-      return Future<dynamic>.error(
-        DioException(
-          requestOptions: options,
-          response: Response<dynamic>(
-            requestOptions: options,
-            statusCode: response.statusCode,
-            statusMessage: response.statusMessage,
-          ),
-          type: DioExceptionType.unknown,
-          error: e,
-        ),
-      );
     }
+
+    // No compression claimed, or identity — pass the original (possibly empty)
+    // body through to the inner transformer.
+    return _inner.transformResponse(options, response);
+  }
+
+  /// Try multiple decoders in a sensible order. Returns the first one that
+  /// succeeds, or throws [FormatException] with the chain of failures.
+  ///
+  /// Order:
+  ///   1. Magic-byte sniff (gzip 0x1f 0x8b / deflate 0x78 ?? / JSON 0x7b|0x5b).
+  ///   2. Header-declared encoding (server's claim, as a hint).
+  ///   3. Brotli (no magic bytes — must be probed; known to be the actual
+  ///      format hungsanity.com sends even when the header says gzip).
+  ///   4. The other classic encoding (last-resort safety net).
+  List<int> _decompress(List<int> compressed, String headerEncoding) {
+    // 1. Magic-byte sniff — fastest and most reliable for gzip/deflate.
+    if (compressed.length >= 2 && compressed[0] == 0x1f && compressed[1] == 0x8b) {
+      debugPrint('[CompressionTransformer] magic-bytes: gzip');
+      return gzip.decode(compressed);
+    }
+    if (compressed.isNotEmpty &&
+        compressed[0] == 0x78 &&
+        compressed.length >= 2 &&
+        const {0x01, 0x5e, 0x9c, 0xda}.contains(compressed[1])) {
+      debugPrint('[CompressionTransformer] magic-bytes: deflate');
+      return zlib.decode(compressed);
+    }
+    // Body is already plain text (JSON object/array) — server lied about encoding.
+    if (compressed.isNotEmpty && (compressed[0] == 0x7b || compressed[0] == 0x5b)) {
+      debugPrint('[CompressionTransformer] magic-bytes: identity (JSON)');
+      return compressed;
+    }
+
+    // 2. Build the fallback chain. Header is the server's claim, brotli is the
+    //    most likely alternative based on observed server behaviour, and the
+    //    other classic encoding is the final safety net.
+    final candidates = <String>[];
+    void addCandidate(String c) {
+      if (!candidates.contains(c)) candidates.add(c);
+    }
+
+    addCandidate(headerEncoding);
+    addCandidate('br');
+    if (headerEncoding == 'gzip') addCandidate('deflate');
+    if (headerEncoding == 'deflate') addCandidate('gzip');
+
+    final failures = <String>[];
+    for (final enc in candidates) {
+      try {
+        switch (enc) {
+          case 'br':
+            final out = const BrotliDecoder().convert(compressed);
+            debugPrint('[CompressionTransformer] fallback matched: brotli');
+            return out;
+          case 'gzip':
+            final out = gzip.decode(compressed);
+            debugPrint('[CompressionTransformer] fallback matched: gzip');
+            return out;
+          case 'deflate':
+            final out = zlib.decode(compressed);
+            debugPrint('[CompressionTransformer] fallback matched: deflate');
+            return out;
+          default:
+            continue;
+        }
+      } catch (e) {
+        failures.add('$enc: $e');
+      }
+    }
+    throw FormatException(
+      'Unable to decompress response. Tried [${candidates.join(", ")}]. '
+      'Failures: ${failures.join(" | ")}',
+    );
+  }
+
+  DioException _dioExceptionFrom(RequestOptions options, ResponseBody response, Object error) {
+    return DioException(
+      requestOptions: options,
+      response: Response<dynamic>(
+        requestOptions: options,
+        statusCode: response.statusCode,
+        statusMessage: response.statusMessage,
+      ),
+      type: DioExceptionType.unknown,
+      error: error,
+    );
   }
 }
 
