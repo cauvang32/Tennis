@@ -32,15 +32,11 @@ jobs:
       - run: flutter build apk --debug
       - run: |
           mkdir -p build/app/outputs/final-apks
-          # With ABI splits enabled, the universal debug APK is named
-          # `app-universal-debug.apk` (it still bundles all 4 ABIs so the
-          # emulator install path is unchanged for local testing).
           if [ -f "build/app/outputs/flutter-apk/app-universal-debug.apk" ]; then
             mv build/app/outputs/flutter-apk/app-universal-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
           else
             mv build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/final-apks/tennis_app_debug.apk
           fi
-          # Clean up per-ABI debug APKs and any leftover signed file.
           rm -f build/app/outputs/flutter-apk/app-*-debug.apk
           if [ -f "build/app/outputs/flutter-apk/app-debug-signed.apk" ]; then
             rm build/app/outputs/flutter-apk/app-debug-signed.apk
@@ -58,17 +54,12 @@ jobs:
           keyPassword: ${{ secrets.KEY_PASSWORD }}
       - if: github.event_name != 'pull_request'
         run: |
-          # R8 + ABI splits produce one signed APK per architecture
-          # (arm64-v8a, armeabi-v7a, x86_64) plus a universal one.
-          # Rename each to tennis_app_<arch>.apk and let the create_release
-          # job glob `release-files/*` to pick them all up.
           cd build/app/outputs/flutter-apk
           for apk in *-release-signed.apk; do
-            # e.g. app-arm64-v8a-release-signed.apk -> tennis_app_arm64-v8a.apk
-            new_name=$(echo "$apk" | sed 's/^app-/tennis_app_/; s/-release-signed//; s/$/.apk/')
-            mv "$apk" "../../final-apks/$new_name"
+            new_name=$(echo "$apk" | sed 's/^app-/tennis_app_/; s/-release-signed//')
+            mv "$apk" "../final-apks/$new_name"
           done
-          ls -la ../../final-apks/
+          ls -la ../final-apks/
       - uses: actions/upload-artifact@v4
         with:
           name: tennis_app_debug
@@ -76,8 +67,8 @@ jobs:
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: tennis_app
-          path: build/app/outputs/final-apks/tennis_app.apk
+          name: tennis_app_release_apks
+          path: build/app/outputs/final-apks/tennis_app_*.apk
 
   build_ios:
     runs-on: macos-latest
