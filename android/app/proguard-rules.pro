@@ -32,3 +32,25 @@
 -keepclassmembers class **$Companion {
     public static final ** INSTANCE;
 }
+
+# ─── Firebase ───────────────────────────────────────────────────────────────
+# Firebase discovers plugins via reflection-registered `*KtxRegistrar`
+# classes. R8's default minification strips/renames their no-arg
+# constructors, which is why logcat shows:
+#   "Could not instantiate com.google.firebase.installations
+#    .FirebaseInstallationsKtxRegistrar
+#    Caused by: java.lang.NoSuchMethodException: ...<init> []"
+# Keep the whole Firebase tree, members, and silence the warnings
+# caused by optional Firebase transitive deps.
+-keep class com.google.firebase.** { *; }
+-keep class com.google.firebase.installations.** { *; }
+-keep class com.google.firebase.messaging.** { *; }
+-keep class com.google.firebase.messaging.FirebaseMessagingService { *; }
+-keepclassmembers class com.google.firebase.** { *; }
+-dontwarn com.google.firebase.**
+
+# Firebase uses its own Service subclasses (e.g. on Android 8+ foreground
+# service for FCM background handler) — keep the FCM service class so
+# the manifest reference resolves.
+-keep class com.google.firebase.messaging.FirebaseMessagingService { *; }
+-keep class * extends com.google.firebase.messaging.FirebaseMessagingService
