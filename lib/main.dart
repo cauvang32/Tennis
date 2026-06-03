@@ -18,11 +18,19 @@ void main() async {
   // the app still runs, just without push notifications.
   final firebaseReady = await _initFirebase();
   final repo = TennisRepository();
-  await repo.initialize();
-  await NotificationHelper().initialize();
-  if (firebaseReady) {
-    await PushNotifications().initialize(repo);
-  }
+  // Defer the heavy init to after the first frame so the dashboard paints
+  // immediately. The FlutterSecureStorage 6-step migration and the FCM
+  // token registration each stall the main thread for hundreds of ms
+  // on a cold start (TOO_MANY_REGISTRATIONS timeouts, AndroidKeyStore
+  // cipher init) — running them before runApp() yields a white-screen
+  // 'show nothing' launch.
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await repo.initialize();
+    await NotificationHelper().initialize();
+    if (firebaseReady) {
+      await PushNotifications().initialize(repo);
+    }
+  });
   runApp(TennisProApp(repo: repo));
 }
 
