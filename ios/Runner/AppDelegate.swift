@@ -14,8 +14,12 @@ import FirebaseMessaging
     // GoogleService-Info.plist during plugin registration.
     FirebaseApp.configure()
 
-    // Set FCM delegate so the SDK can route token-refresh callbacks.
-    Messaging.messaging().delegate = self
+    // FCM delegate: handled on the Dart side via
+    //   FirebaseMessaging.instance.onTokenRefresh.listen(_registerToken)
+    // in lib/utils/push_notifications.dart, so we do not set
+    // Messaging.messaging().delegate here (it would require
+    // AppDelegate to conform to MessagingDelegate, which the Dart
+    // path makes unnecessary).
 
     // Register for remote (silent + alert) notifications so APNs can
     // hand off to FCM. iOS will then issue the user-permission prompt
