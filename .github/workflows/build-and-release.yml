@@ -86,6 +86,15 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: touch .env.example
+      
+      # BƯỚC MỚI CHÈN: Bơm cấu hình Firebase cho iOS từ GitHub Secrets
+      - name: Inject GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          mkdir -p ios/Runner
+          echo "$GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+          
       - run: flutter build ios --release --no-codesign
       - run: |
           mkdir -p final-ios
@@ -99,7 +108,7 @@ jobs:
         with:
           name: tennis_app_ios
           path: final-ios/
-
+          
   create_release:
     needs: [build_android, build_ios]
     if: github.event_name == 'push'
