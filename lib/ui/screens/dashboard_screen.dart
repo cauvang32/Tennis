@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/tennis_models.dart';
 import '../../repository/tennis_repository.dart';
+import '../widgets/shared_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
   final TennisRepository repo;
@@ -20,6 +21,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     widget.repo.addListener(_onRepoChanged);
+    // Initial data fetch is issued by MainAppShell.initState. By the
+    // time this screen mounts inside the IndexedStack the fetch is
+    // already in flight; the listener picks up the result.
   }
 
   @override
@@ -261,8 +265,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(
             onPressed: () async {
-              await widget.repo.deleteMatch(m.id);
-              if (ctx.mounted) Navigator.pop(ctx);
+              final success = await widget.repo.deleteMatch(m.id);
+              if (!ctx.mounted) return;
+              // Always close the delete dialog (destructive action);
+              // surface server-side errors via SnackBar.
+              Navigator.pop(ctx);
+              if (!success) {
+                showErrorSnack(ctx, widget.repo.errorMessage);
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             child: const Text('Xóa Trận Đấu'),
@@ -353,7 +363,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final ids = [p1, p3]; if (matchType == 'duo') { if (p2 == null || p4 == null) { ss(() => error = 'Select all 4 players.'); return; } ids.addAll([p2!, p4!]); }
                 if (ids.toSet().length != ids.length) { ss(() => error = 'A player cannot be selected multiple times.'); return; }
                 final success = await widget.repo.createMatch(CreateMatchRequest(seasonId: selSeason, playDate: playDate, player1Id: p1, player2Id: p2, player3Id: p3, player4Id: p4, team1Score: s1, team2Score: s2, winningTeam: winTeam, matchType: matchType));
-                if (success && ctx.mounted) Navigator.pop(ctx);
+                if (!ctx.mounted) return;
+                if (success) {
+                  Navigator.pop(ctx);
+                } else {
+                  // Keep the dialog open so the user can adjust scores
+                  // / selections and retry; surface the server error.
+                  showErrorSnack(ctx, widget.repo.errorMessage);
+                }
               },
               child: const Text('Lưu kết quả'),
             ),

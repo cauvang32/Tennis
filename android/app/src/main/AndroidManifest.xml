@@ -38,6 +38,22 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- FCM: icon and color used for notifications when the server
+             doesn't supply its own. Defaults to the app icon and the
+             system's tint if omitted. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@android:color/white" />
+        <!-- FCM: declare default channel for "notification" messages
+             that arrive with no notification channel in the payload.
+             flutter_local_notifications' channels take precedence when
+             we render manually via showRemoteMatch / showRemoteSeason. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="tennis_fcm_default" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -1,4 +1,6 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/tennis_models.dart';
@@ -110,6 +112,117 @@ class NotificationHelper {
     final p = _coldLaunchPayload;
     _coldLaunchPayload = null;
     return p;
+  }
+
+  // ─── First-Launch Permission Popup ─────────────────────────────────────────
+
+  /// Show a custom in-app dialog (Vietnamese) explaining notifications,
+  /// then request the system permission. **Auto-runs whenever the OS
+  /// permission is missing** — not just on first launch. Safe to call
+  /// from `initState` via `addPostFrameCallback`; the function
+  /// short-circuits immediately if notification permission is already
+  /// granted, and the `barrierDismissible: false` dialog cannot be
+  /// dismissed without choosing, so no double-prompting within a
+  /// single launch.
+  ///
+  /// Why this is here instead of relying on the OS prompt alone:
+  ///   * On iOS, the FCM `requestPermission` call pops the system tray
+  ///     *immediately* with no context — the user has not seen any UI
+  ///     yet. Gating it behind a custom dialog gives the user a reason
+  ///     to accept.
+  ///   * On Android 13+, the runtime prompt is a single-use dialog;
+  ///     the user can deny without understanding. An in-app prompt
+  ///     first lets us show a localised explanation.
+  /// Returns `true` if the user tapped 'Cho phép' (and the OS permission
+  /// was then requested). Returns `false` for 'Để sau', for an already-
+  /// granted permission, and for non-Android/iOS platforms.
+  ///
+  /// Callers should call [PushNotifications.refreshToken] when this
+  /// returns `true` so that iOS devices whose APNs token is only
+  /// delivered after the system prompt get persisted to the backend.
+  Future<bool> requestPermissionOnFirstLaunch(BuildContext context) async {
+    if (kIsWeb) return false;
+    // FCM has no desktop implementation — the plugin throws
+    // MissingPluginException on macOS/Linux/Windows. Skip the entire
+    // dialog (and the doomed FCM request) on non-mobile platforms.
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return false;
+    }
+
+    // Auto-ask only if the OS permission is actually missing. If the
+    // user has already granted it (or it is permanently denied by the
+    // OS), we skip the dialog. On Android 13+ "permanently denied"
+    // manifests as `areNotificationsEnabled() == false` even after
+    // we call requestPermission — in that case the dialog still
+    // appears as a reminder that the user can re-enable in Settings.
+    if (await _hasNotificationPermission()) return false;
+    if (!context.mounted) return false;
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            icon: Icon(Icons.notifications_active, color: Theme.of(ctx).colorScheme.primary, size: 40),
+            title: const Text('Bật thông báo?',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text(
+              'Chúng tôi sẽ gửi thông báo khi có trận đấu mới hoặc mùa giải mới.\n\n'
+              'Bạn có thể tắt thông báo bất cứ lúc nào trong Cài đặt hệ thống.',
+              textAlign: TextAlign.center,
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Để sau'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Cho phép'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) return false;
+
+    // Local notification permission (Android 13+ system dialog, iOS no-op
+    // because FCM handles the OS-level prompt for remote notifications).
+    await requestPermissions();
+    // FCM remote notification permission (iOS system dialog, Android no-op
+    // because the FCM plugin auto-registers the token without it).
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (e) {
+      debugPrint('[NotificationHelper] FCM requestPermission failed: $e');
+    }
+    return true;
+  }
+
+  /// Check the actual OS-level notification permission. Returns true
+  /// if the app is currently allowed to post notifications.
+  Future<bool> _hasNotificationPermission() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidImpl = _notificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      // On Android 12 and below, this always returns true (no runtime
+      // permission needed). On 13+, it reflects POST_NOTIFICATIONS.
+      return await androidImpl?.areNotificationsEnabled() ?? true;
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      // `provisional` is granted-but-quiet — we still treat it as
+      // "has permission" so we don't re-prompt.
+      return settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+    }
+    return true;
   }
 
   /// Request permissions on Android 13+ and iOS
@@ -282,6 +395,72 @@ class NotificationHelper {
       notificationDetails: details,
       payload: 'season:${season.id}',
     );
+  }
+
+  // ─── Remote (FCM) Notification Rendering ──────────────────────────────────
+
+  /// Render a "new match" notification from a remote push payload.
+  /// Called by the FCM background handler (in a background isolate) and
+  /// by the foreground `onMessage` listener in push_notifications.dart.
+  /// The server is expected to supply the title and body — we just
+  /// render them through the existing match channel so the UX matches
+  /// local notifications exactly.
+  Future<void> showRemoteMatch({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    if (kIsWeb) return;
+    const androidDetails = AndroidNotificationDetails(
+      _matchChannelId,
+      _matchChannelName,
+      channelDescription: _matchChannelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    await _notificationsPlugin.show(
+      id: _matchNotificationIdBase + id,
+      title: title,
+      body: body,
+      notificationDetails: details,
+      payload: payload,
+    );
+    // Persist last-seen so that when the user resumes the app the SSE
+    // check in fetchInitData doesn't fire a duplicate of the same match.
+    await updateLastSeenMatchId(id);
+  }
+
+  /// Render a "new season" notification from a remote push payload.
+  /// See [showRemoteMatch] for context.
+  Future<void> showRemoteSeason({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    if (kIsWeb) return;
+    const androidDetails = AndroidNotificationDetails(
+      _seasonChannelId,
+      _seasonChannelName,
+      channelDescription: _seasonChannelDesc,
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    await _notificationsPlugin.show(
+      id: _seasonNotificationIdBase + id,
+      title: title,
+      body: body,
+      notificationDetails: details,
+      payload: payload,
+    );
+    // See note in showRemoteMatch — prevents the SSE path from
+    // double-notifying when the user reopens the app.
+    await updateLastSeenSeasonId(id);
   }
 
   // ─── Notification Tap Callbacks ─────────────────────────────────────────────

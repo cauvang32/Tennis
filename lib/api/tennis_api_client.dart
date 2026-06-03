@@ -285,6 +285,17 @@ class TennisApiClient {
     return CSRFResponse.fromJson(resp.data);
   }
 
+  // ─── Devices (FCM) ────────────────────────────────────────────────────────
+
+  /// Register an FCM device token with the backend so it knows which
+  /// device to push to. Called from push_notifications.dart after FCM
+  /// issues a token (and again whenever the token rotates — see
+  /// FirebaseMessaging.onTokenRefresh).
+  Future<GeneralResponse?> registerDevice(RegisterDeviceRequest request) async {
+    final resp = await _dio.post('devices/register', data: request.toJson());
+    return GeneralResponse.fromJson(resp.data);
+  }
+
   // ─── Players ───────────────────────────────────────────────────────────────
 
   Future<List<Player>> getPlayers() async {

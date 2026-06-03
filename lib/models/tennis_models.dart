@@ -445,6 +445,13 @@ class SeasonPlayersRequest {
   Map<String, dynamic> toJson() => {'playerIds': playerIds};
 }
 
+class RegisterDeviceRequest {
+  final String token;
+  final String platform; // 'android' | 'ios'
+  const RegisterDeviceRequest({required this.token, required this.platform});
+  Map<String, dynamic> toJson() => {'token': token, 'platform': platform};
+}
+
 // ─── Coerce Helpers (match Kotlin CoerceIntAdapter / CoerceDoubleAdapter) ────
 
 int? _toInt(dynamic value) {

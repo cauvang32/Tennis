@@ -143,7 +143,14 @@ class _PlayersScreenState extends State<PlayersScreen> {
                   return;
                 }
                 final success = await widget.repo.createPlayer(nameCtrl.text.trim());
-                if (success && ctx.mounted) Navigator.pop(ctx);
+                if (!ctx.mounted) return;
+                if (success) {
+                  Navigator.pop(ctx);
+                } else {
+                  // Keep the dialog open so the user can adjust the name
+                  // and retry; surface the repo's error via SnackBar.
+                  showErrorSnack(ctx, widget.repo.errorMessage);
+                }
               },
               child: const Text('Đăng Ký'),
             ),
@@ -163,8 +170,16 @@ class _PlayersScreenState extends State<PlayersScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(
             onPressed: () async {
-              await widget.repo.deletePlayer(player.id);
-              if (ctx.mounted) Navigator.pop(ctx);
+              final success = await widget.repo.deletePlayer(player.id);
+              if (!ctx.mounted) return;
+              // Always close the delete dialog (destructive action —
+              // user shouldn't be stuck looking at it). On failure, the
+              // SnackBar surfaces the error so the user knows it didn't
+              // take effect.
+              Navigator.pop(ctx);
+              if (!success) {
+                showErrorSnack(ctx, widget.repo.errorMessage);
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             child: const Text('Xóa VĐV'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/tennis_models.dart';
 import '../../repository/tennis_repository.dart';
+import '../theme/app_theme.dart';
 import '../widgets/shared_widgets.dart';
 
 /// RankingsScreen — Matches Kotlin RankingsScreen.kt with 3 tabs: Tổng, Theo mùa, Theo ngày.
@@ -303,7 +304,7 @@ class _RankingRow extends StatelessWidget {
                 // Position badge
                 SizedBox(
                   width: 28,
-                  child: _positionBadge(pos, cs),
+                  child: _positionBadge(context, pos, cs),
                 ),
                 // Name
                 Expanded(
@@ -386,20 +387,30 @@ class _RankingRow extends StatelessWidget {
     );
   }
 
-  Widget _positionBadge(int pos, ColorScheme cs) {
-    final Color? badgeColor = switch (pos) {
-      1 => const Color(0xFFFFD700),
-      2 => const Color(0xFFC0C0C0),
-      3 => const Color(0xFFCD7F32),
-      _ => null,
-    };
+  Widget _positionBadge(BuildContext context, int pos, ColorScheme cs) {
+    // Pull medal colours from the theme extension so dark mode picks
+    // up the brighter variants defined in app_theme.dart's MedalColors.
+    final medals = Theme.of(context).extension<MedalColors>()!;
+    Color? badgeColor;
+    Color textColor = cs.onSurfaceVariant;
+    switch (pos) {
+      case 1:
+        badgeColor = medals.gold;
+        textColor = medals.goldText;
+      case 2:
+        badgeColor = medals.silver;
+        textColor = medals.silverText;
+      case 3:
+        badgeColor = medals.bronze;
+        textColor = medals.bronzeText;
+    }
     if (badgeColor != null) {
       return Container(
         width: 24,
         height: 24,
         decoration: BoxDecoration(color: badgeColor, shape: BoxShape.circle),
         alignment: Alignment.center,
-        child: Text(pos.toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.black)),
+        child: Text(pos.toString(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: textColor)),
       );
     }
     return Text(pos.toString(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant));

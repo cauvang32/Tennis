@@ -103,6 +103,11 @@ class TennisRepository extends ChangeNotifier {
   Future<T?> _safeApiCall<T>(
     Future<T> Function() call, {
     bool showLoading = true,
+    // When false, 401 / CSRF-403 do NOT clear the session. Used for
+    // endpoints that may legitimately be called before login (e.g.
+    // FCM device registration on cold start) where the auth error
+    // shouldn't log out a previously-authenticated user.
+    bool clearSessionOnAuthError = true,
   }) async {
     if (showLoading) {
       _isLoading = true;
@@ -121,9 +126,13 @@ class TennisRepository extends ChangeNotifier {
       final statusCode = e.response?.statusCode;
       if (statusCode == 401 ||
           (statusCode == 403 && parsedError.toLowerCase().contains('csrf'))) {
-        debugPrint('[TennisRepository] 401/CSRF — clearing session');
-        developer.log('Auth expired or CSRF error, clearing session', name: 'TennisRepository');
-        await _clearSession();
+        if (clearSessionOnAuthError) {
+          debugPrint('[TennisRepository] 401/CSRF — clearing session');
+          developer.log('Auth expired or CSRF error, clearing session', name: 'TennisRepository');
+          await _clearSession();
+        } else {
+          debugPrint('[TennisRepository] 401/CSRF on auth-tolerant call — keeping session');
+        }
       } else if (statusCode == 429) {
         _rateLimitedUntil = DateTime.now().millisecondsSinceEpoch + 60000;
         debugPrint('[TennisRepository] 429 — backing off for 60s');
@@ -379,6 +388,26 @@ class TennisRepository extends ChangeNotifier {
 
   Future<List<RankingEntry>?> fetchDateRankings(String date) async {
     return _safeApiCall(() => _api.getDateRankings(date));
+  }
+
+  // ─── Devices (FCM) ─────────────────────────────────────────────────────────
+
+  /// Register an FCM device token with the backend so it knows which
+  /// device to push to. Called from push_notifications.dart after FCM
+  /// issues a token. The call is silent (showLoading: false) — the user
+  /// should never see a spinner for this.
+  /// Register an FCM device token with the backend. Called from
+  /// `PushNotifications.initialize` on every cold start, including
+  /// before the user is logged in. We must NOT clear the session if
+  /// the backend rejects the request — that would silently log the
+  /// user out on every app launch.
+  Future<bool> registerDevice({required String fcmToken, required String platform}) async {
+    final res = await _safeApiCall(
+      () => _api.registerDevice(RegisterDeviceRequest(token: fcmToken, platform: platform)),
+      showLoading: false,
+      clearSessionOnAuthError: false,
+    );
+    return res?.success == true;
   }
 
   // ─── Session Management ────────────────────────────────────────────────────

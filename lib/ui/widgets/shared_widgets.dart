@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
 import '../../repository/tennis_repository.dart';
 
+/// Show a red floating SnackBar with the repo's last error message, or a
+/// generic Vietnamese fallback. Used by every dialog onPressed that issues
+/// an async CRUD call and needs to surface a server-side failure.
+void showErrorSnack(BuildContext context, String? message) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(message ?? 'Đã xảy ra lỗi. Vui lòng thử lại.'),
+      backgroundColor: Theme.of(context).colorScheme.error,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+    ));
+}
+
 /// Shared header bar with login/logout and theme toggle — replicated on every screen.
 class ScreenHeader extends StatelessWidget {
   final TennisRepository repo;

@@ -2,6 +2,27 @@ import 'package:flutter/material.dart';
 
 /// Matches Kotlin Theme.kt exactly — same hex color values for Light & Dark schemes.
 
+const _lightMedals = MedalColors(
+  gold: Color(0xFFFFD700),
+  goldText: Color(0xFF1A1C1E),
+  silver: Color(0xFFC0C0C0),
+  silverText: Color(0xFF1A1C1E),
+  bronze: Color(0xFFCD7F32),
+  bronzeText: Color(0xFFFFFFFF),
+);
+
+const _darkMedals = MedalColors(
+  // Slightly brighter than light-mode so they read on the dark surface
+  // while still feeling "metallic". Text colour stays dark because the
+  // medal fills are still bright enough to warrant a dark label.
+  gold: Color(0xFFFFE55C),
+  goldText: Color(0xFF1A1C1E),
+  silver: Color(0xFFD8D8D8),
+  silverText: Color(0xFF1A1C1E),
+  bronze: Color(0xFFE0975C),
+  bronzeText: Color(0xFF1A1C1E),
+);
+
 final ThemeData lightTheme = ThemeData(
   useMaterial3: true,
   fontFamily: 'Inter',
@@ -23,6 +44,31 @@ final ThemeData lightTheme = ThemeData(
     errorContainer: Color(0xFFFFDAD6),
     error: Color(0xFFBA1A1A),
   ),
+  // M3 default adds a slight primary-tinted overlay on elevated surfaces;
+  // we strip it so cards/dialogs feel flat against the background.
+  cardTheme: CardThemeData(
+    elevation: 0,
+    color: const Color(0xFFFDFBFF),
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Color(0xFFFDFBFF),
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    scrolledUnderElevation: 1,
+  ),
+  dialogTheme: DialogThemeData(
+    backgroundColor: const Color(0xFFFDFBFF),
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  ),
+  navigationBarTheme: const NavigationBarThemeData(
+    backgroundColor: Color(0xFFFDFBFF),
+    surfaceTintColor: Colors.transparent,
+    indicatorColor: Color(0xFFDDE1F9),
+  ),
+  extensions: const [_lightMedals],
 );
 
 final ThemeData darkTheme = ThemeData(
@@ -46,4 +92,85 @@ final ThemeData darkTheme = ThemeData(
     errorContainer: Color(0xFF93000A),
     error: Color(0xFFFFB4AB),
   ),
+  // In dark mode, lifting a card by tinting it with the primary blue
+  // looks out of place. We use surfaceContainerLow for a subtle, neutral
+  // elevation that doesn't introduce a colour cast.
+  cardTheme: CardThemeData(
+    elevation: 0,
+    color: const Color(0xFF211F26),
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  ),
+  appBarTheme: const AppBarTheme(
+    backgroundColor: Color(0xFF1A1C1E),
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    scrolledUnderElevation: 1,
+  ),
+  dialogTheme: DialogThemeData(
+    backgroundColor: const Color(0xFF2B2930),
+    surfaceTintColor: Colors.transparent,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  ),
+  navigationBarTheme: const NavigationBarThemeData(
+    backgroundColor: Color(0xFF1A1C1E),
+    surfaceTintColor: Colors.transparent,
+    indicatorColor: Color(0xFF3B4664),
+  ),
+  extensions: const [_darkMedals],
 );
+
+/// Theme extension for the gold / silver / bronze medal colours used in
+/// the rankings screen. Defined as a [ThemeExtension] so light and dark
+/// variants stay in sync with the rest of the theme — no more hardcoded
+/// `Color(0xFFFFD700)` in the screen.
+@immutable
+class MedalColors extends ThemeExtension<MedalColors> {
+  final Color gold;
+  final Color goldText;
+  final Color silver;
+  final Color silverText;
+  final Color bronze;
+  final Color bronzeText;
+
+  const MedalColors({
+    required this.gold,
+    required this.goldText,
+    required this.silver,
+    required this.silverText,
+    required this.bronze,
+    required this.bronzeText,
+  });
+
+  @override
+  MedalColors copyWith({
+    Color? gold,
+    Color? goldText,
+    Color? silver,
+    Color? silverText,
+    Color? bronze,
+    Color? bronzeText,
+  }) {
+    return MedalColors(
+      gold: gold ?? this.gold,
+      goldText: goldText ?? this.goldText,
+      silver: silver ?? this.silver,
+      silverText: silverText ?? this.silverText,
+      bronze: bronze ?? this.bronze,
+      bronzeText: bronzeText ?? this.bronzeText,
+    );
+  }
+
+  @override
+  MedalColors lerp(ThemeExtension<MedalColors>? other, double t) {
+    if (other is! MedalColors) return this;
+    return MedalColors(
+      gold: Color.lerp(gold, other.gold, t)!,
+      goldText: Color.lerp(goldText, other.goldText, t)!,
+      silver: Color.lerp(silver, other.silver, t)!,
+      silverText: Color.lerp(silverText, other.silverText, t)!,
+      bronze: Color.lerp(bronze, other.bronze, t)!,
+      bronzeText: Color.lerp(bronzeText, other.bronzeText, t)!,
+    );
+  }
+}

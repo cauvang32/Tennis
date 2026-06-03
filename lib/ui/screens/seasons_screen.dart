@@ -163,7 +163,14 @@ class _SeasonsScreenState extends State<SeasonsScreen> {
                     playerIds: selectedPlayerIds.toList(),
                     description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
                   ));
-                  if (success && ctx.mounted) Navigator.pop(ctx);
+                  if (!ctx.mounted) return;
+                  if (success) {
+                    Navigator.pop(ctx);
+                  } else {
+                    // Keep the dialog open so the user can adjust fields
+                    // and retry; surface the server-side error via SnackBar.
+                    showErrorSnack(ctx, widget.repo.errorMessage);
+                  }
                 },
                 child: const Text('Khởi Tạo Giải Đấu'),
               ),
@@ -185,8 +192,14 @@ class _SeasonsScreenState extends State<SeasonsScreen> {
           FilledButton(
             onPressed: () async {
               final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-              await widget.repo.endSeason(season.id, today);
-              if (ctx.mounted) Navigator.pop(ctx);
+              final success = await widget.repo.endSeason(season.id, today);
+              if (!ctx.mounted) return;
+              // Always close the dialog (destructive action); surface
+              // server-side errors via SnackBar.
+              Navigator.pop(ctx);
+              if (!success) {
+                showErrorSnack(ctx, widget.repo.errorMessage);
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             child: const Text('Kết thúc'),
@@ -206,8 +219,12 @@ class _SeasonsScreenState extends State<SeasonsScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(
             onPressed: () async {
-              await widget.repo.deleteSeason(season.id);
-              if (ctx.mounted) Navigator.pop(ctx);
+              final success = await widget.repo.deleteSeason(season.id);
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              if (!success) {
+                showErrorSnack(ctx, widget.repo.errorMessage);
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             child: const Text('Xóa Mùa Giải'),
@@ -439,7 +456,18 @@ class _RosterDialogState extends State<_RosterDialog> {
                 : () async {
                     setState(() => _isSaving = true);
                     final success = await widget.repo.updateSeasonPlayers(widget.season.id, _chosenIds.toList());
-                    if (success && context.mounted) Navigator.pop(context);
+                    // Use context.mounted (not `mounted`) so the
+                    // use_build_context_synchronously lint recognises the
+                    // guard as related to the State's BuildContext.
+                    if (!context.mounted) return;
+                    setState(() => _isSaving = false);
+                    if (success) {
+                      Navigator.pop(context);
+                    } else {
+                      // Keep the dialog open so the user can adjust the
+                      // roster and retry; surface the server-side error.
+                      showErrorSnack(context, widget.repo.errorMessage);
+                    }
                   },
             child: _isSaving
                 ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))

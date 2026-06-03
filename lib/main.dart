@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'repository/tennis_repository.dart';
 import 'utils/notification_helper.dart';
+import 'utils/push_notifications.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/dashboard_screen.dart';
 import 'ui/screens/rankings_screen.dart';
@@ -10,10 +13,28 @@ import 'ui/screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Graceful Firebase init — if google-services.json / GoogleService-Info.plist
+  // are missing (e.g. fresh checkout before FCM_SETUP.md is followed),
+  // the app still runs, just without push notifications.
+  final firebaseReady = await _initFirebase();
   final repo = TennisRepository();
   await repo.initialize();
   await NotificationHelper().initialize();
+  if (firebaseReady) {
+    await PushNotifications().initialize(repo);
+  }
   runApp(TennisProApp(repo: repo));
+}
+
+Future<bool> _initFirebase() async {
+  try {
+    await Firebase.initializeApp();
+    return true;
+  } catch (e, st) {
+    debugPrint('[main] Firebase.initializeApp failed (config files likely '
+        'missing — see FCM_SETUP.md): $e\n$st');
+    return false;
+  }
 }
 
 class TennisProApp extends StatelessWidget {
@@ -27,6 +48,16 @@ class TennisProApp extends StatelessWidget {
       builder: (context, _) {
         final systemBrightness = MediaQueryData.fromView(View.of(context)).platformBrightness;
         final isDark = repo.themeOverride ?? (systemBrightness == Brightness.dark);
+        // Adapt the system UI overlay (status bar / nav bar) to the
+        // resolved theme so icons stay visible in both modes. Single
+        // SystemUiOverlayStyle — previous code had a ternary with two
+        // byte-identical branches that hid the per-mode values.
+        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          systemNavigationBarColor: isDark ? const Color(0xFF1A1C1E) : const Color(0xFFFDFBFF),
+          systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        ));
 
         return MaterialApp(
           title: 'Tennis Pro',
@@ -58,6 +89,20 @@ class _MainAppShellState extends State<MainAppShell> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     widget.repo.fetchInitData();
     widget.repo.startBackgroundSync();
+
+    // First-launch notification permission popup. Idempotent — only
+    // shows when the OS permission is actually missing. Returns true
+    // if the user tapped 'Cho phép'; we then re-register the FCM
+    // token so iOS devices (whose APNs token only arrives after the
+    // system prompt) get persisted on this very launch.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final granted = await NotificationHelper()
+          .requestPermissionOnFirstLaunch(context);
+      if (granted) {
+        await PushNotifications().refreshToken(widget.repo);
+      }
+    });
   }
 
   @override
@@ -122,12 +167,19 @@ class _MainAppShellState extends State<MainAppShell> with WidgetsBindingObserver
 
   Widget _buildTab() {
     void showLogin() => setState(() => _isLoginOpen = true);
-    return switch (_activeTab) {
-      0 => DashboardScreen(repo: widget.repo, onShowLogin: showLogin),
-      1 => RankingsScreen(repo: widget.repo, onShowLogin: showLogin),
-      2 => SeasonsScreen(repo: widget.repo, onShowLogin: showLogin),
-      3 => PlayersScreen(repo: widget.repo, onShowLogin: showLogin),
-      _ => DashboardScreen(repo: widget.repo, onShowLogin: showLogin),
-    };
+    // IndexedStack (not switch + new instance each rebuild) keeps all four
+    // tab screens mounted at once. Without this, switching tabs disposes
+    // the dashboard's State and remounts it with an empty _matchesList
+    // (the new initState doesn't fetch — it only subscribes to the repo,
+    // so the screen would sit empty until the next notifyListeners).
+    return IndexedStack(
+      index: _activeTab,
+      children: [
+        DashboardScreen(repo: widget.repo, onShowLogin: showLogin),
+        RankingsScreen(repo: widget.repo, onShowLogin: showLogin),
+        SeasonsScreen(repo: widget.repo, onShowLogin: showLogin),
+        PlayersScreen(repo: widget.repo, onShowLogin: showLogin),
+      ],
+    );
   }
 }
