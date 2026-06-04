@@ -412,6 +412,17 @@ class NotificationHelper {
     required String payload,
   }) async {
     if (kIsWeb) return;
+    // Dedup against the SSE path. If the user was in the app when the
+    // event happened, the SSE pipeline already fired a local
+    // notification and persisted `last_seen >= id`. Without this check
+    // the FCM background handler would re-render the same match the
+    // moment it arrives, producing two system-tray entries for the
+    // same event.
+    final lastSeen = await getLastSeenMatchId();
+    if (id <= lastSeen) {
+      debugPrint('[NotificationHelper] FCM match $id <= last_seen $lastSeen, skipping (SSE already showed)');
+      return;
+    }
     const androidDetails = AndroidNotificationDetails(
       _matchChannelId,
       _matchChannelName,
@@ -442,6 +453,14 @@ class NotificationHelper {
     required String payload,
   }) async {
     if (kIsWeb) return;
+    // Dedup against the SSE path — same logic as showRemoteMatch.
+    // If the SSE path already showed this season, last_seen >= id and
+    // we skip; otherwise we show and update last_seen for next time.
+    final lastSeen = await getLastSeenSeasonId();
+    if (id <= lastSeen) {
+      debugPrint('[NotificationHelper] FCM season $id <= last_seen $lastSeen, skipping (SSE already showed)');
+      return;
+    }
     const androidDetails = AndroidNotificationDetails(
       _seasonChannelId,
       _seasonChannelName,
