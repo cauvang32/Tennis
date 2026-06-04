@@ -25,8 +25,15 @@ void main() async {
   // cipher init) — running them before runApp() yields a white-screen
   // 'show nothing' launch.
   WidgetsBinding.instance.addPostFrameCallback((_) async {
+    // Yield to the event loop between heavy init steps so the UI thread
+    // can process touch events and render frames — prevents Android ANR.
+    await Future.delayed(Duration.zero);
     await repo.initialize();
+
+    await Future.delayed(Duration.zero);
     await NotificationHelper().initialize();
+
+    await Future.delayed(Duration.zero);
     if (firebaseReady) {
       await PushNotifications().initialize(repo);
     }

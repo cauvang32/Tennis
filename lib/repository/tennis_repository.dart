@@ -379,15 +379,15 @@ class TennisRepository extends ChangeNotifier {
   // ─── Rankings ──────────────────────────────────────────────────────────────
 
   Future<List<RankingEntry>?> fetchLifetimeRankings() async {
-    return _safeApiCall(() => _api.getLifetimeRankings());
+    return _safeApiCall(() => _api.getLifetimeRankings(), showLoading: false);
   }
 
   Future<List<RankingEntry>?> fetchSeasonRankings(int seasonId) async {
-    return _safeApiCall(() => _api.getSeasonRankings(seasonId));
+    return _safeApiCall(() => _api.getSeasonRankings(seasonId), showLoading: false);
   }
 
   Future<List<RankingEntry>?> fetchDateRankings(String date) async {
-    return _safeApiCall(() => _api.getDateRankings(date));
+    return _safeApiCall(() => _api.getDateRankings(date), showLoading: false);
   }
 
   // ─── Devices (FCM) ─────────────────────────────────────────────────────────
